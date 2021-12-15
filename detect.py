@@ -15,7 +15,7 @@ model = torch.hub.load('ultralytics/yolov5', 'yolov5n6', pretrained=True, device
 names = model.names
 
 stater = {}
-counter = {"up": 0, "down": 0}
+counter = {"up": 0, "down": 0, "left": 0, "right": 0}
 
 
 def xyxy2xywh(x):
@@ -32,14 +32,16 @@ def track_and_plot(results, frame):
     labels, cord = results
     n = len(labels)
     x_shape, y_shape = frame.shape[1], frame.shape[0]
-    y_line = y_shape / 3
+    y_line = y_shape / 2
+    x_line = x_shape / 2
     cv2.line(frame, (0, int(y_line)), (int(x_shape), int(y_line)), (255, 0, 0), 5)
+    cv2.line(frame, (int(x_line), 0), (int(x_line), int(y_shape)), (255, 0, 0), 5)
     boxes = []
     confs = []
     clss = []
     for i in range(n):
         row = cord[i]
-        if row[4] >= 0.2:
+        if row[4] >= 0.5:
             x1, y1, x2, y2 = int(row[0] * x_shape), int(row[1] * y_shape), int(row[2] * x_shape), int(row[3] * y_shape)
             boxes.append([x1, y1, x2, y2])
             confs.append(row[4])
@@ -62,26 +64,41 @@ def track_and_plot(results, frame):
                     person_count_now += 1
 
                 center_y = int((bboxes[1] + bboxes[3]) / 2)
+                center_x = int((bboxes[0] + bboxes[2]) / 2)
                 if int(cls) == 0:
                     if str(id) not in stater.keys():
                         stater[str(id)] = {
-                            "now": center_y,
-                            "old": center_y,
+                            "now_y": center_y,
+                            "old_y": center_y,
+                            "now_x": center_x,
+                            "old_x": center_x,
                             "down": False,
-                            "up": False
+                            "up": False,
+                            "left": False,
+                            "right": False
                         }
                     else:
-                        stater[str(id)]["old"] = stater[str(id)]["now"]
-                        stater[str(id)]["now"] = center_y
-                        if stater[str(id)]["old"] <= int(y_line) < stater[str(id)]["now"] and \
+                        stater[str(id)]["old_y"] = stater[str(id)]["now_y"]
+                        stater[str(id)]["now_y"] = center_y
+                        stater[str(id)]["old_x"] = stater[str(id)]["now_x"]
+                        stater[str(id)]["now_x"] = center_x
+                        if stater[str(id)]["old_y"] <= int(y_line) < stater[str(id)]["now_y"] and \
                                 (not stater[str(id)]["down"]) and int(cls) == 0:
                             counter["down"] += 1
                             stater[str(id)]["down"] = True
-                        if stater[str(id)]["old"] >= int(y_line) > stater[str(id)]["now"] and \
+                        if stater[str(id)]["old_y"] >= int(y_line) > stater[str(id)]["now_y"] and \
                                 (not stater[str(id)]["up"]) and int(cls) == 0:
                             counter["up"] += 1
                             stater[str(id)]["up"] = True
 
+                        if stater[str(id)]["old_x"] <= int(x_line) < stater[str(id)]["now_x"] and \
+                                (not stater[str(id)]["right"]) and int(cls) == 0:
+                            counter["right"] += 1
+                            stater[str(id)]["right"] = True
+                        if stater[str(id)]["old_x"] >= int(x_line) > stater[str(id)]["now_x"] and \
+                                (not stater[str(id)]["left"]) and int(cls) == 0:
+                            counter["left"] += 1
+                            stater[str(id)]["left"] = True
                 c = int(cls)
                 label = f'{id} {names[c]} {conf:.2f}'
                 bgr = (0, 255, 0)
@@ -93,7 +110,11 @@ def track_and_plot(results, frame):
                         2)
             cv2.putText(frame, "person down:" + str(counter["down"]), (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
                         (0, 0, 255), 2)
-            cv2.putText(frame, "person now:" + str(person_count_now), (20, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
+            cv2.putText(frame, "person left:" + str(counter["left"]), (20, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255),
+                        2)
+            cv2.putText(frame, "person right:" + str(counter["right"]), (20, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
+                        (0, 0, 255), 2)
+            cv2.putText(frame, "person now:" + str(person_count_now), (20, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
                         (0, 0, 255), 2)
 
     return frame
@@ -118,12 +139,16 @@ deepsort = DeepSort(cfg.DEEPSORT.REID_CKPT,
                     max_age=cfg.DEEPSORT.MAX_AGE, n_init=cfg.DEEPSORT.N_INIT, nn_budget=cfg.DEEPSORT.NN_BUDGET,
                     use_cuda=False)
 
-player = cv2.VideoCapture("/Users/oujiangping/Downloads/TownCentreXVID.avi")
+player = cv2.VideoCapture("rtmp://1.14.103.148:32160/media/iphone")
 # player = cv2.VideoCapture(0)
+frame_count = 1
 while True:
     start_time = time()
     ret, frame = player.read()
     assert ret
+    frame_count += 1
+    if frame_count % 2 == 0:
+        continue
     print("got a frame")
     results = score_frame(frame)
 
